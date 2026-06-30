@@ -59,3 +59,36 @@ h2 { font-size: 18px; }
   background: rgba(52,199,89,0.12); border: 1px solid var(--green);
   color: #c7f5d4; padding: 10px 12px; border-radius: 8px; margin-bottom: 16px;
 }
+
+/* Trusted consent screen — styled as a distinct "wallet" surface. */
+.consent-backdrop {
+  position: fixed; inset: 0; background: rgba(0,0,0,0.6);
+  display: grid; place-items: end center; padding: 0;
+  z-index: 100;
+}
+.consent {
+  width: 100%; max-width: 480px;
+  background: #11131a; border: 1px solid #3a4050;
+  border-top-left-radius: 18px; border-top-right-radius: 18px;
+  padding: 20px 22px 28px; box-shadow: 0 -8px 40px rgba(0,0,0,0.5);
+  animation: slideup 0.18s ease-out;
+}
+@keyframes slideup { from { transform: translateY(24px); opacity: 0; } to { transform: none; opacity: 1; } }
+.consent-head {
+  font-size: 13px; color: #9aa4b8; letter-spacing: 0.02em;
+  border-bottom: 1px solid var(--border); padding-bottom: 12px; margin-bottom: 16px;
+}
+.consent-head .lock { margin-right: 4px; }
+.consent-amount { font-size: 34px; font-weight: 700; }
+.consent-amount .ccy { font-size: 18px; color: var(--muted); margin-left: 4px; }
+.consent-desc { color: var(--text); margin: 4px 0 16px; }
+.consent-row { display: flex; justify-content: space-between; align-items: center; padding: 8px 0; }
+.consent-row.col { flex-direction: column; align-items: stretch; gap: 6px; }
+.consent select {
+  width: 100%; padding: 10px; border-radius: 8px;
+  background: var(--panel-2); color: var(--text); border: 1px solid var(--border);
+}
+.consent .warn { color: #ffb020; }
+.consent-actions { display: flex; gap: 10px; margin-top: 18px; }
+.consent-actions button { flex: 1; padding: 12px; font-weight: 600; }
+.consent-foot { font-size: 12px; margin-top: 12px; text-align: center; }

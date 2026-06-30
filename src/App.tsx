@@ -1,11 +1,18 @@
-import { useCallback, useEffect, useState } from "react";
-import { WalletBridge, type WalletContext } from "./bridge/WalletBridge";
+import { useCallback, useEffect, useRef, useState } from "react";
+import {
+  WalletBridge,
+  type ConsentDecision,
+  type ConsentPreview,
+  type WalletContext,
+} from "./bridge/WalletBridge";
+import { ConsentModal } from "./ConsentModal";
 import { createQuote, fetchGallery, fetchProducts, type Product, type PurchasedImage } from "./api";
 
 type Status =
   | { kind: "idle" }
   | { kind: "buying"; productId: string }
   | { kind: "error"; message: string }
+  | { kind: "cancelled" }
   | { kind: "bought"; orderId: string };
 
 export function App() {
@@ -15,6 +22,26 @@ export function App() {
   const [gallery, setGallery] = useState<PurchasedImage[]>([]);
   const [status, setStatus] = useState<Status>({ kind: "idle" });
   const [booting, setBooting] = useState(true);
+
+  // Pending consent screen: the preview to show and the resolver the modal
+  // calls with the user's decision.
+  const [consent, setConsent] = useState<ConsentPreview | null>(null);
+  const consentResolve = useRef<((d: ConsentDecision) => void) | null>(null);
+
+  // renderConsent is handed to the bridge; it pops the trusted consent screen
+  // and resolves once the user confirms or cancels.
+  const renderConsent = useCallback((preview: ConsentPreview): Promise<ConsentDecision> => {
+    return new Promise<ConsentDecision>((resolve) => {
+      consentResolve.current = resolve;
+      setConsent(preview);
+    });
+  }, []);
+
+  const onConsentDecision = (d: ConsentDecision) => {
+    setConsent(null);
+    consentResolve.current?.(d);
+    consentResolve.current = null;
+  };
 
   const refreshGallery = useCallback(async (userId: string) => {
     try {
@@ -28,7 +55,7 @@ export function App() {
   useEffect(() => {
     (async () => {
       try {
-        const b = await WalletBridge.init();
+        const b = await WalletBridge.init(renderConsent);
         const context = b.getContext();
         setBridge(b);
         setCtx(context);
@@ -40,7 +67,7 @@ export function App() {
         setBooting(false);
       }
     })();
-  }, [refreshGallery]);
+  }, [refreshGallery, renderConsent]);
 
   const buy = async (product: Product) => {
     if (!bridge || !ctx) return;
@@ -48,8 +75,13 @@ export function App() {
     try {
       // 1. Ask our service backend for a signed quote.
       const quote = await createQuote(ctx.userId, product.id);
-      // 2. Hand it to the wallet; the shell renders consent and pays.
+      // 2. Hand it to the wallet: it shows the consent screen and, if approved,
+      //    signs the device consent and pays. Returns null on cancel.
       const result = await bridge.pay(quote);
+      if (result === null) {
+        setStatus({ kind: "cancelled" });
+        return;
+      }
       if (result.state !== "ORDER_STATE_COMPLETED" && result.state !== "ORDER_STATE_PENDING") {
         throw new Error(`payment ${result.state ?? "failed"}`);
       }
@@ -73,6 +105,7 @@ export function App() {
 
       <main className="content">
         {status.kind === "error" && <div className="error">{status.message}</div>}
+        {status.kind === "cancelled" && <div className="muted">Payment cancelled.</div>}
         {status.kind === "bought" && (
           <div className="ok">Purchased! order {status.orderId.slice(0, 14)}…</div>
         )}
@@ -119,6 +152,8 @@ export function App() {
           )}
         </section>
       </main>
+
+      {consent && <ConsentModal preview={consent} onDecision={onConsentDecision} />}
     </div>
   );
 }

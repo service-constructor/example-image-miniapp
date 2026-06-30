@@ -103,6 +103,11 @@ function pickWallet(currencyId: number) {
   return WALLETS.find((w) => w.currencyId === currencyId);
 }
 
+// currencyName is a human label for a currency id (demo mapping).
+function currencyName(currencyId: number): string {
+  return { 1: "USDT", 2: "EUR" }[currencyId] ?? `#${currencyId}`;
+}
+
 async function readJson(req: import("node:http").IncomingMessage): Promise<any> {
   const chunks: Buffer[] = [];
   for await (const c of req) chunks.push(c as Buffer);
@@ -128,12 +133,40 @@ const server = createServer(async (req, res) => {
       });
     }
 
+    if (req.method === "POST" && url.pathname === "/prepare") {
+      // Consent preview: what the shell will show the user before they approve.
+      // Cross-currency rule (white paper 7.2): only wallets whose currency the
+      // service accepts are eligible; the quote currency is the one to pay in.
+      const body = await readJson(req);
+      const quote = body?.quote;
+      if (!quote) return send(res, 400, { error: "quote is required" });
+      const accepted: number[] = (quote.acceptedCurrencyIds as number[]) ?? [Number(quote.currencyId)];
+      const eligible = WALLETS.filter(
+        (w) => w.currencyId === Number(quote.currencyId) && accepted.includes(w.currencyId),
+      );
+      return send(res, 200, {
+        amount: quote.amount,
+        currencyId: quote.currencyId,
+        currency: currencyName(Number(quote.currencyId)),
+        description: quote.description,
+        serviceId: quote.serviceId,
+        wallets: eligible,
+        // exp lets the UI warn about an expiring quote.
+        exp: quote.exp,
+      });
+    }
+
     if (req.method === "POST" && url.pathname === "/pay") {
       const body = await readJson(req);
       const quote = body?.quote;
       if (!quote) return send(res, 400, { error: "quote is required" });
 
-      const wallet = pickWallet(Number(quote.currencyId));
+      // The wallet the user picked on the consent screen (falls back to the
+      // single eligible wallet).
+      const selectedId = body?.selectedWalletId as string | undefined;
+      const wallet = selectedId
+        ? WALLETS.find((w) => w.walletId === selectedId)
+        : pickWallet(Number(quote.currencyId));
       if (!wallet) return send(res, 400, { error: "no wallet for quote currency" });
 
       // Build the device-signed consent over hash(quote)+wallet+nonce.
