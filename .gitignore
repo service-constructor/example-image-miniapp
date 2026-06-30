@@ -1,0 +1,7 @@
+node_modules/
+dist/
+*.local
+.vite/
+*.tsbuildinfo
+mock-shell/keys/
+.DS_Store

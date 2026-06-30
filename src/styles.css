@@ -1,0 +1,61 @@
+:root {
+  --bg: #0f1115;
+  --panel: #181b22;
+  --panel-2: #1f232c;
+  --border: #2a2f3a;
+  --text: #e6e9ef;
+  --muted: #8b93a3;
+  --accent: #4c8dff;
+  --green: #34c759;
+  --danger: #ff5c5c;
+  font-family: system-ui, -apple-system, Segoe UI, Roboto, sans-serif;
+}
+* { box-sizing: border-box; }
+body { margin: 0; background: var(--bg); color: var(--text); }
+
+button {
+  font: inherit; cursor: pointer; border: none; border-radius: 8px;
+  padding: 8px 16px; background: var(--accent); color: #fff;
+}
+button:disabled { opacity: 0.5; cursor: not-allowed; }
+button.ghost { background: var(--panel-2); color: var(--text); border: 1px solid var(--border); }
+
+.center { min-height: 100vh; display: grid; place-items: center; }
+.muted { color: var(--muted); }
+.strong { font-weight: 600; }
+.mono { font-family: ui-monospace, Menlo, monospace; font-size: 12px; }
+
+.appbar {
+  display: flex; align-items: center; justify-content: space-between;
+  padding: 14px 24px; border-bottom: 1px solid var(--border); background: var(--panel);
+}
+.brand { font-weight: 700; font-size: 18px; }
+.content { max-width: 900px; margin: 0 auto; padding: 24px; }
+.content section { margin-bottom: 32px; }
+h2 { font-size: 18px; }
+
+.toolbar { display: flex; align-items: center; justify-content: space-between; }
+
+.card {
+  background: var(--panel); border: 1px solid var(--border);
+  border-radius: 12px; padding: 16px;
+}
+
+.catalog { display: grid; grid-template-columns: repeat(auto-fill, minmax(180px, 1fr)); gap: 16px; }
+.product { display: flex; flex-direction: column; gap: 8px; align-items: flex-start; }
+.product .thumb { font-size: 40px; }
+.product button { margin-top: 8px; align-self: stretch; }
+
+.gallery { display: grid; grid-template-columns: repeat(auto-fill, minmax(200px, 1fr)); gap: 16px; }
+.shot { padding: 8px; text-decoration: none; color: inherit; }
+.shot img { width: 100%; height: 150px; object-fit: cover; border-radius: 8px; display: block; }
+.shot .mono { margin-top: 6px; }
+
+.error {
+  background: rgba(255,92,92,0.12); border: 1px solid var(--danger);
+  color: #ffd0d0; padding: 10px 12px; border-radius: 8px; margin-bottom: 16px;
+}
+.ok {
+  background: rgba(52,199,89,0.12); border: 1px solid var(--green);
+  color: #c7f5d4; padding: 10px 12px; border-radius: 8px; margin-bottom: 16px;
+}
