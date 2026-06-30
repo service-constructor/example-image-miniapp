@@ -50,8 +50,8 @@ export function App() {
       const quote = await createQuote(ctx.userId, product.id);
       // 2. Hand it to the wallet; the shell renders consent and pays.
       const result = await bridge.pay(quote);
-      if (result.status !== "ORDER_STATE_COMPLETED" && result.status !== "ORDER_STATE_PENDING") {
-        throw new Error(`payment ${result.status}`);
+      if (result.state !== "ORDER_STATE_COMPLETED" && result.state !== "ORDER_STATE_PENDING") {
+        throw new Error(`payment ${result.state ?? "failed"}`);
       }
       setStatus({ kind: "bought", orderId: result.orderId });
       // 3. Refresh the gallery (PENDING images appear once the callback lands).

@@ -26,7 +26,8 @@ export type Quote = Record<string, unknown>;
 
 export interface PayResult {
   orderId: string;
-  status: string;
+  // The platform order state, e.g. "ORDER_STATE_COMPLETED" / "ORDER_STATE_PENDING".
+  state: string;
   externalRef?: string;
   amount?: string;
   fee?: string;
@@ -61,6 +62,10 @@ export class WalletBridge {
     const order = await res.json();
     if (!res.ok) {
       throw new Error(order?.message ?? order?.error ?? `pay failed: ${res.status}`);
+    }
+    // Defensive: a 200 without an order state is not a valid result.
+    if (!order || typeof order.state !== "string") {
+      throw new Error(order?.message ?? "payment failed: malformed response");
     }
     return order as PayResult;
   }
