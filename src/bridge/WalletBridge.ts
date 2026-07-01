@@ -1,23 +1,23 @@
 // WalletBridge — the Client SDK a service web app uses to talk to the wallet
-// shell (white paper §13.1). It mirrors the real SDK surface:
+// shell (white paper §13.1). When the mini-app is hosted inside the cabinet, the
+// shell is the parent window and the bridge speaks **postMessage** to it:
 //
 //   const bridge = await WalletBridge.init();
-//   const ctx = await bridge.getContext();   // { userId, wallets, ... }
-//   const result = await bridge.pay(quote);   // { orderId, status }
+//   const ctx = bridge.getContext();          // { userId }
+//   const result = await bridge.pay(quote);    // { orderId, state } | null (cancel)
 //
-// In the real product the bridge speaks postMessage to the native shell hosting
-// the WebView. In this demo it talks to the mock shell backend over the /shell
-// proxy, so the device key and consent signing stay in the trusted shell.
-
-export interface Wallet {
-  walletId: string;
-  currencyId: number;
-  label: string;
-}
+// The trusted consent screen is rendered by the SHELL, not the mini-app, so the
+// service cannot alter what the user approves. The mini-app just calls pay().
 
 export interface WalletContext {
+  // userId is a plaintext hint from the shell — fine for display, but NOT to be
+  // trusted for identity (a hosting shell could lie).
   userId: string;
-  wallets: Wallet[];
+  // encUserId is the user id sealed to THIS service's encryption key by the
+  // shell. The mini-app sends it to its own backend, which decrypts it with the
+  // service private key — yielding a user id that cannot be forged. This is the
+  // trusted identity.
+  encUserId: string;
 }
 
 // Quote is the signed payment instruction the service issues; opaque to the
@@ -34,78 +34,68 @@ export interface PayResult {
   net?: string;
 }
 
-// ConsentPreview is what the wallet shows the user before they approve. It comes
-// from the shell, not the mini-app, so the service cannot alter what is shown.
-export interface ConsentPreview {
-  amount: string;
-  currencyId: number;
-  currency: string;
-  description: string;
-  serviceId: string;
-  wallets: Wallet[];
-  exp: number;
+const CHANNEL = "sc-wallet-bridge";
+
+type ReqBody =
+  | { type: "getContext" }
+  | { type: "prepare"; quote: Quote }
+  | { type: "pay"; quote: Quote; selectedWalletId: string };
+type Req = ReqBody & { id: string };
+
+type Resp = { id: string; ok: true; result: unknown } | { id: string; ok: false; error: string };
+
+function isEnvelope(data: unknown): data is { channel: string; payload: Resp } {
+  return typeof data === "object" && data !== null && (data as { channel?: unknown }).channel === CHANNEL;
 }
 
-// ConsentDecision is the user's answer on the trusted consent screen.
-export type ConsentDecision = { approved: true; walletId: string } | { approved: false };
-
-// ConsentRenderer draws the trusted consent screen and resolves with the user's
-// decision. The mini-app provides this so the screen can render in-app, but it
-// is driven by the shell's preview data and is conceptually the wallet's UI.
-export type ConsentRenderer = (preview: ConsentPreview) => Promise<ConsentDecision>;
-
-const SHELL_BASE = "/shell";
-
 export class WalletBridge {
-  private constructor(
-    private ctx: WalletContext,
-    private renderConsent: ConsentRenderer,
-  ) {}
+  private seq = 0;
+  private pending = new Map<string, { resolve: (v: unknown) => void; reject: (e: Error) => void }>();
 
-  // init performs the handshake and registers the consent renderer.
-  static async init(renderConsent: ConsentRenderer): Promise<WalletBridge> {
-    const res = await fetch(`${SHELL_BASE}/context`);
-    if (!res.ok) throw new Error(`bridge handshake failed: ${res.status}`);
-    const ctx = (await res.json()) as WalletContext;
-    return new WalletBridge(ctx, renderConsent);
+  private constructor(private ctx: WalletContext) {
+    window.addEventListener("message", (ev) => {
+      if (ev.source !== window.parent) return;
+      if (!isEnvelope(ev.data)) return;
+      const resp = ev.data.payload;
+      const p = this.pending.get(resp.id);
+      if (!p) return;
+      this.pending.delete(resp.id);
+      if (resp.ok) p.resolve(resp.result);
+      else p.reject(new Error(resp.error));
+    });
+  }
+
+  // init handshakes with the host shell (the parent window) for user context.
+  static async init(): Promise<WalletBridge> {
+    if (window.parent === window) {
+      throw new Error("WalletBridge: not hosted in a wallet shell (open via the cabinet)");
+    }
+    const tmp = new WalletBridge({ userId: "", encUserId: "" });
+    const ctx = (await tmp.call({ type: "getContext" })) as WalletContext;
+    tmp.ctx = ctx;
+    return tmp;
   }
 
   getContext(): WalletContext {
     return this.ctx;
   }
 
-  // pay runs the full consent flow: it asks the shell for a preview, shows the
-  // trusted consent screen, and — only if the user approves — has the shell sign
-  // the device consent and call the platform. Returns null if the user cancels.
+  // pay hands the quote to the shell, which shows the consent screen and, if the
+  // user approves, performs the authenticated payment. Returns null on cancel.
   async pay(quote: Quote): Promise<PayResult | null> {
-    // 1. Preview from the shell (amount, currency, eligible wallets).
-    const prep = await fetch(`${SHELL_BASE}/prepare`, {
-      method: "POST",
-      headers: { "Content-Type": "application/json" },
-      body: JSON.stringify({ quote }),
-    });
-    const preview = await prep.json();
-    if (!prep.ok) {
-      throw new Error(preview?.message ?? preview?.error ?? `prepare failed: ${prep.status}`);
-    }
+    // selectedWalletId is chosen by the user on the shell's consent screen; the
+    // pay request carries it back. We pass an empty placeholder — the shell owns
+    // wallet selection in the hosted model.
+    const result = (await this.call({ type: "pay", quote, selectedWalletId: "" })) as PayResult | null;
+    return result;
+  }
 
-    // 2. Trusted consent screen — the user confirms or cancels.
-    const decision = await this.renderConsent(preview as ConsentPreview);
-    if (!decision.approved) return null;
-
-    // 3. Confirm: the shell signs the device consent and pays.
-    const res = await fetch(`${SHELL_BASE}/pay`, {
-      method: "POST",
-      headers: { "Content-Type": "application/json" },
-      body: JSON.stringify({ quote, selectedWalletId: decision.walletId }),
+  private call(req: ReqBody): Promise<unknown> {
+    const id = `${Date.now()}-${this.seq++}`;
+    const envelope = { channel: CHANNEL, payload: { ...req, id } as Req };
+    return new Promise((resolve, reject) => {
+      this.pending.set(id, { resolve, reject });
+      window.parent.postMessage(envelope, "*");
     });
-    const order = await res.json();
-    if (!res.ok) {
-      throw new Error(order?.message ?? order?.error ?? `pay failed: ${res.status}`);
-    }
-    if (!order || typeof order.state !== "string") {
-      throw new Error(order?.message ?? "payment failed: malformed response");
-    }
-    return order as PayResult;
   }
 }

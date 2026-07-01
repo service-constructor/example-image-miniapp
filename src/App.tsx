@@ -1,12 +1,13 @@
-import { useCallback, useEffect, useRef, useState } from "react";
+import { useCallback, useEffect, useState } from "react";
+import { WalletBridge } from "./bridge/WalletBridge";
 import {
-  WalletBridge,
-  type ConsentDecision,
-  type ConsentPreview,
-  type WalletContext,
-} from "./bridge/WalletBridge";
-import { ConsentModal } from "./ConsentModal";
-import { createQuote, fetchGallery, fetchProducts, type Product, type PurchasedImage } from "./api";
+  createQuote,
+  decryptUser,
+  fetchGallery,
+  fetchProducts,
+  type Product,
+  type PurchasedImage,
+} from "./api";
 
 type Status =
   | { kind: "idle" }
@@ -17,31 +18,12 @@ type Status =
 
 export function App() {
   const [bridge, setBridge] = useState<WalletBridge | null>(null);
-  const [ctx, setCtx] = useState<WalletContext | null>(null);
+  // The trusted user id: decrypted by our backend from the shell's sealed token.
+  const [userId, setUserId] = useState<string>("");
   const [products, setProducts] = useState<Product[]>([]);
   const [gallery, setGallery] = useState<PurchasedImage[]>([]);
   const [status, setStatus] = useState<Status>({ kind: "idle" });
   const [booting, setBooting] = useState(true);
-
-  // Pending consent screen: the preview to show and the resolver the modal
-  // calls with the user's decision.
-  const [consent, setConsent] = useState<ConsentPreview | null>(null);
-  const consentResolve = useRef<((d: ConsentDecision) => void) | null>(null);
-
-  // renderConsent is handed to the bridge; it pops the trusted consent screen
-  // and resolves once the user confirms or cancels.
-  const renderConsent = useCallback((preview: ConsentPreview): Promise<ConsentDecision> => {
-    return new Promise<ConsentDecision>((resolve) => {
-      consentResolve.current = resolve;
-      setConsent(preview);
-    });
-  }, []);
-
-  const onConsentDecision = (d: ConsentDecision) => {
-    setConsent(null);
-    consentResolve.current?.(d);
-    consentResolve.current = null;
-  };
 
   const refreshGallery = useCallback(async (userId: string) => {
     try {
@@ -51,32 +33,34 @@ export function App() {
     }
   }, []);
 
-  // Handshake with the wallet + load the catalog on mount.
+  // Handshake with the wallet shell (parent window) + load the catalog on mount.
   useEffect(() => {
     (async () => {
       try {
-        const b = await WalletBridge.init(renderConsent);
+        const b = await WalletBridge.init();
         const context = b.getContext();
         setBridge(b);
-        setCtx(context);
+        // Decrypt the sealed user id via our backend — the trusted identity.
+        const trusted = await decryptUser(context.encUserId);
+        setUserId(trusted);
         setProducts(await fetchProducts());
-        await refreshGallery(context.userId);
+        await refreshGallery(trusted);
       } catch (err) {
         setStatus({ kind: "error", message: err instanceof Error ? err.message : String(err) });
       } finally {
         setBooting(false);
       }
     })();
-  }, [refreshGallery, renderConsent]);
+  }, [refreshGallery]);
 
   const buy = async (product: Product) => {
-    if (!bridge || !ctx) return;
+    if (!bridge || !userId) return;
     setStatus({ kind: "buying", productId: product.id });
     try {
-      // 1. Ask our service backend for a signed quote.
-      const quote = await createQuote(ctx.userId, product.id);
-      // 2. Hand it to the wallet: it shows the consent screen and, if approved,
-      //    signs the device consent and pays. Returns null on cancel.
+      // 1. Ask our service backend for a signed quote with the TRUSTED user id.
+      const quote = await createQuote(userId, product.id);
+      // 2. Hand it to the wallet shell: it shows the consent screen and, if the
+      //    user approves, pays over the session. Returns null on cancel.
       const result = await bridge.pay(quote);
       if (result === null) {
         setStatus({ kind: "cancelled" });
@@ -87,8 +71,8 @@ export function App() {
       }
       setStatus({ kind: "bought", orderId: result.orderId });
       // 3. Refresh the gallery (PENDING images appear once the callback lands).
-      await refreshGallery(ctx.userId);
-      setTimeout(() => refreshGallery(ctx.userId), 2000);
+      await refreshGallery(userId);
+      setTimeout(() => refreshGallery(userId), 2000);
     } catch (err) {
       setStatus({ kind: "error", message: err instanceof Error ? err.message : String(err) });
     }
@@ -100,7 +84,7 @@ export function App() {
     <div className="app">
       <header className="appbar">
         <span className="brand">🖼️ Image Shop</span>
-        {ctx && <span className="muted">user: {ctx.userId}</span>}
+        {userId && <span className="muted">user: {userId}</span>}
       </header>
 
       <main className="content">
@@ -132,8 +116,8 @@ export function App() {
         <section>
           <div className="toolbar">
             <h2>Your images ({gallery.length})</h2>
-            {ctx && (
-              <button className="ghost" onClick={() => refreshGallery(ctx.userId)}>
+            {userId && (
+              <button className="ghost" onClick={() => refreshGallery(userId)}>
                 Refresh
               </button>
             )}
@@ -152,8 +136,6 @@ export function App() {
           )}
         </section>
       </main>
-
-      {consent && <ConsentModal preview={consent} onDecision={onConsentDecision} />}
     </div>
   );
 }

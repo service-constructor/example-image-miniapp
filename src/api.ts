@@ -4,6 +4,20 @@ import type { Quote } from "./bridge/WalletBridge";
 
 const SERVICE_BASE = "/service";
 
+// decryptUser sends the shell's encrypted user id to our backend, which decrypts
+// it with the service private key and returns the trusted user id. This is the
+// identity the mini-app relies on (the plaintext ctx.userId is only a hint).
+export async function decryptUser(encUserId: string): Promise<string> {
+  const res = await fetch(`${SERVICE_BASE}/decrypt-user`, {
+    method: "POST",
+    headers: { "Content-Type": "application/json" },
+    body: JSON.stringify({ encUserId }),
+  });
+  const data = await res.json();
+  if (!res.ok) throw new Error((data as { error?: string }).error ?? `decrypt failed: ${res.status}`);
+  return (data as { userId: string }).userId;
+}
+
 export interface Product {
   id: string;
   title: string;
