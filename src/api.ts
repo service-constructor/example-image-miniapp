@@ -37,15 +37,42 @@ export async function fetchProducts(): Promise<Product[]> {
   return (data.products as string[]).map((id) => ({ id, title: TITLES[id] ?? id }));
 }
 
-export async function createQuote(userId: string, productId: string): Promise<Quote> {
+export interface Scenario {
+  id: string;
+  title: string;
+}
+
+// The service publishes the saga demo scenarios it supports.
+export async function fetchScenarios(): Promise<{ scenarios: Scenario[]; default: string }> {
+  const res = await fetch(`${SERVICE_BASE}/scenarios`);
+  if (!res.ok) throw new Error(`scenarios failed: ${res.status}`);
+  return res.json();
+}
+
+export async function createQuote(userId: string, productId: string, scenario: string): Promise<Quote> {
   const res = await fetch(`${SERVICE_BASE}/quote`, {
     method: "POST",
     headers: { "Content-Type": "application/json" },
-    body: JSON.stringify({ userId, productId }),
+    body: JSON.stringify({ userId, productId, scenario }),
   });
   if (!res.ok) throw new Error(`quote failed: ${res.status}`);
   const data = await res.json();
   return data.quote as Quote;
+}
+
+// Poll the SERVICE's own delivery status for an order. This is the provider-side
+// view (DONE / PENDING / NOT_DONE / UNKNOWN) — no auth needed, unlike the
+// platform order state — and is enough to watch async/reconcile transitions.
+export interface DeliveryStatus {
+  status: string; // DONE | PENDING | NOT_DONE | UNKNOWN
+  externalRef?: string;
+  imageUrl?: string;
+}
+
+export async function fetchOrderStatus(orderId: string): Promise<DeliveryStatus | null> {
+  const res = await fetch(`${SERVICE_BASE}/status/${encodeURIComponent(orderId)}`);
+  if (!res.ok) return null;
+  return res.json();
 }
 
 export interface PurchasedImage {

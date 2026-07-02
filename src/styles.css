@@ -92,3 +92,21 @@ h2 { font-size: 18px; }
 .consent-actions { display: flex; gap: 10px; margin-top: 18px; }
 .consent-actions button { flex: 1; padding: 12px; font-weight: 600; }
 .consent-foot { font-size: 12px; margin-top: 12px; text-align: center; }
+
+/* --- Saga scenario picker + order tracker --- */
+.scenario-box { display: flex; flex-direction: column; gap: 8px; margin-bottom: 16px; }
+.scenario-box select {
+  padding: 10px; border-radius: 8px;
+  background: var(--panel-2, #1b2130); color: var(--text, #e6eaf2); border: 1px solid var(--border, #2a3040);
+}
+.small { font-size: 12px; }
+.tracker { display: flex; flex-direction: column; gap: 8px; }
+.track-row { display: flex; align-items: center; gap: 12px; padding: 10px 12px; }
+.badge {
+  display: inline-block; min-width: 78px; text-align: center;
+  padding: 3px 8px; border-radius: 999px; font-size: 11px; font-weight: 700; letter-spacing: 0.03em;
+}
+.badge.ok { background: #123524; color: #4ade80; }
+.badge.bad { background: #3a1520; color: #f87171; }
+.badge.warn { background: #3a2f10; color: #ffb020; }
+.badge.pending { background: #10263a; color: #38bdf8; }
